@@ -60,7 +60,7 @@ background.js  (service worker)
 
 - `chrome://` 页面、Chrome 应用商店等受保护页面无法注入脚本
 - 部分站点（尤其自绘滚动容器的 SPA）手势仍可能被内容抢走，用 `HSCROLL_MS` 调
-- 只测过 macOS 15 + Chrome 155
+- 已在 macOS 15.8.1 + Chrome 155.0.8059.85 实测通过：同标签多级后退、新标签打开的页面退回来源标签
 
 ## 参考
 
