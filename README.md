@@ -45,13 +45,18 @@ X/Twitter、YouTube、B站 这类 SPA 会用 `history.replaceState` 改写入口
 Chrome 里 `pushState` **不会**让 `history.length` 增长，数出来的额度永远是 0，
 结果是第一次右滑就直接关标签，用户觉得"退不了"。
 
-**最终方案（v1.4）：先退、再检查、不对就撤回。**
+**v1.4 方案：先退、再检查、不对就撤回。** 但对慢网络无效——
+固定 90ms 后读 URL 时，页面还在加载旧文档，`tabs.get` 拿到的仍是退之前的地址，
+同源检查通过，守卫放行，人就到了 Google。
 
-1. `goBack()` 之后等 90ms，读当前标签的 URL
-2. 若新 URL 与手势发起时的页面**不同源**（跨站了），立刻 `goForward()` 撤回
-3. 撤回后走「关闭标签 / 退回来源标签」分支
+**最终方案（v1.5）：事件驱动，等导航真正落地。**
 
-不依赖任何关于 `history.length` 的假设，退到哪就查到哪，跨站就原地弹回。
+1. `goBack()` 前记录发起页面的 origin，向 `pending` 表登记
+2. 订阅 `chrome.tabs.onUpdated`，等 `status === 'complete'` 才读 URL
+3. 落点与发起页面不同源 → `goForward()` 撤回 → 退回来源标签 / 关标签
+4. 2.5s 内未完成（极端慢网）→ 放弃干预，避免卡住用户
+
+不依赖延时猜测，也不依赖 `history.length` 记账。
 
 第 2 步的 `openerTabId` 是另一层保险。在新标签页里打开的第一页，`history.length === 1`，
 `history.back()` 没有目标可回退，任何浏览器都是静默无反应。靠 `openerTabId` 才能知道「是谁打开了我」。
@@ -84,7 +89,7 @@ Chrome 里 `pushState` **不会**让 `history.length` 增长，数出来的额�
 - `chrome://` 页面、Chrome 应用商店等受保护页面无法注入脚本
 - 部分站点（尤其自绘滚动容器的 SPA）手势仍可能被内容抢走，用 `HSCROLL_MS` 调
 - 已在 macOS + Chrome 155 实测通过：同标签多级后退、新标签打开的页面退回来源标签
-- 跨站回退守卫（v1.4）逻辑单测通过，待 X.com 实机确认
+- 跨站回退守卫（v1.5，事件驱动）逻辑单测通过，待 X.com 实机确认
 
 ## 参考
 
