@@ -61,6 +61,27 @@ Chrome 里 `pushState` **不会**让 `history.length` 增长，数出来的额�
 第 2 步的 `openerTabId` 是另一层保险。在新标签页里打开的第一页，`history.length === 1`，
 `history.back()` 没有目标可回退，任何浏览器都是静默无反应。靠 `openerTabId` 才能知道「是谁打开了我」。
 
+## SPA 站点白名单（v1.6）
+
+部分 SPA 站点的历史栈被 `replaceState` 污染：从 Google 搜到 X 的帖子再一路后退，
+会跳到 Google 搜索页。这类站点用 `history.back()` 永远不安全。
+
+所以内置一份白名单，**这些站点右滑不碰历史**，只保留两种行为：
+
+| 情况 | 右滑效果 |
+|---|---|
+| 当前标签是被别的标签打开的 | 关闭当前标签，回到来源标签 |
+| 用户自己开的标签 | 什么都不做（不跳到新标签页） |
+
+白名单在 `swipe.js` 的 `SPA_HISTORY_BLOCKLIST`，默认含 `x.com`、`twitter.com`、
+`youtube.com`、`instagram.com`、`facebook.com`、`reddit.com`、`weibo.com`、`zhihu.com`。
+匹配规则是 `host === d || host.endsWith('.' + d)`，所以 `notx.com`、`x.com.evil.com`
+这类相似域名不会误伤。
+
+想加站点就往数组里加域名；想彻底关掉白名单就把它清空成 `[]`。
+
+白名单站点里要退回上一页，用 `⌘[` 或站点自己的返回按钮。
+
 ## 安装
 
 1. 下载或 clone 本仓库
@@ -89,7 +110,7 @@ Chrome 里 `pushState` **不会**让 `history.length` 增长，数出来的额�
 - `chrome://` 页面、Chrome 应用商店等受保护页面无法注入脚本
 - 部分站点（尤其自绘滚动容器的 SPA）手势仍可能被内容抢走，用 `HSCROLL_MS` 调
 - 已在 macOS + Chrome 155 实测通过：同标签多级后退、新标签打开的页面退回来源标签
-- 跨站回退守卫（v1.5，事件驱动）逻辑单测通过，待 X.com 实机确认
+- SPA 白名单（v1.6）逻辑单测通过，待 X.com 实机确认
 
 ## 参考
 

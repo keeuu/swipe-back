@@ -1,13 +1,7 @@
 // 后台：处理返回 / 前进
 //
-// 核心策略：不做「固定延时后读 URL」的猜测，改为等待真实的导航完成事件。
-// 慢网络下 90ms 窗口拿到的还是旧文档的 URL，会导致跨站守卫失效（v1.4 的 bug）。
-//
-// 后退流程：
-//   1. 记录发起页面 origin
-//   2. 订阅 chrome.tabs.onUpdated，等到 status='complete' 后再看 URL
-//   3. 若落点跨站 -> goForward 撤回 -> 退回来源标签 / 关标签
-//   4. 超时（比如 2.5s）仍未完成 -> 当作站内，放弃干预，避免卡死用户
+// noHistory = true（白名单站点）时：绝不调 tabs.goBack()，直接走 opener 关标签。
+// 其余站点维持原策略：等真导航完成再判断是否跨站，跨站则撤回。
 
 const pending = new Map(); // tabId -> { origin, openerId, done, timer }
 
@@ -34,7 +28,17 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 
     const openerId = tab.openerTabId;
 
-    // 没有历史：直接走回退分支
+    // 白名单站点：不碰历史，只关标签回来源
+    if (msg.noHistory) {
+      if (openerId != null) {
+        fallbackToOpener(openerId, tabId, msg, sendResponse);
+      } else {
+        // 没有 opener，说明是用户自己开的标签：什么都别做
+        sendResponse({ ok: false, how: 'blocked-no-opener' });
+      }
+      return;
+    }
+
     if (tab.historyLength <= 1) {
       fallbackToOpener(openerId, tabId, msg, sendResponse);
       return;
@@ -44,7 +48,6 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     const token = { origin, openerId, done: false, timer: 0 };
     pending.set(tabId, token);
 
-    // 超时保护：导航迟迟不 complete，就别再干预
     token.timer = setTimeout(() => {
       if (!token.done) {
         token.done = true;
@@ -65,7 +68,6 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   return true;
 });
 
-// 等导航真正落地再看 URL
 chrome.tabs.onUpdated.addListener((tabId, info, tab) => {
   const token = pending.get(tabId);
   if (!token || token.done) return;
@@ -77,13 +79,11 @@ chrome.tabs.onUpdated.addListener((tabId, info, tab) => {
 
   const landed = tab.url || '';
   if (token.origin && landed && !sameOrigin(token.origin, landed)) {
-    // 跨站了 -> 撤回
     chrome.tabs.goForward(tabId, () => {
       void chrome.runtime.lastError;
       fallbackToOpener(token.openerId, tabId, { fallback: 'newtab' }, () => {});
     });
   }
-  // 站内：什么都不做，用户已停在正确的上一页
 });
 
 async function fallbackToOpener(openerId, tabId, msg, sendResponse) {
