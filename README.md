@@ -2,7 +2,10 @@
 
 给 macOS 版 Chrome 补上双指滑动返回/前进的手势。
 
-Safari 上双指向右推可以直接返回上一页，Chrome 不行。这个扩展把这件事补上，并且处理了一个 Safari 也没解决好的场景：**点链接弹出的新标签页，右滑会关掉它并退回来源标签。**
+Safari 上双指向右推可以直接返回上一页，Chrome 不行。这个扩展把这件事补上，并且处理了两个 Safari 也没解决好的场景：
+
+1. **点链接弹出的新标签页**：右滑会关掉它并退回来源标签
+2. **SPA 站点的跨站回退**：从 Google 搜索点进 X/Twitter、YouTube 等站点后，一路右滑不会把你送回去 Google 搜索页
 
 ## 为什么 Chrome 在 Mac 上没有这个手势
 
@@ -23,15 +26,31 @@ swipe.js  (content script)
   ├─ 监听 wheel，累计 deltaX
   ├─ 纵向 delta 出现 → 冻结 60ms，交给页面滚动
   ├─ 页面自己横向滚动 → 暂停手势 800ms，避免抢轮播
+  ├─ 站内历史守卫：算出 safeDepth，只允许退回本站自己产生的记录
   └─ 横向累计超阈值 → 发消息给后台
         │
 background.js  (service worker)
-  ├─ 1. tab.historyLength > 1     → chrome.tabs.goBack()
-  ├─ 2. tab.openerTabId 存在      → 激活来源标签 + 关闭当前标签
-  └─ 3. 都没有                    → 按配置跳新标签页 / 关闭 / 不做
+  ├─ 1. allowedHistory 且 historyLength > 1 → chrome.tabs.goBack()
+  ├─ 2. tab.openerTabId 存在               → 激活来源标签 + 关闭当前标签
+  └─ 3. 都没有                              → 按配置跳新标签页 / 关闭 / 不做
 ```
 
-第 2 步是关键。在新标签页里打开的第一页，`history.length === 1`，`history.back()` 没有目标可回退，任何浏览器都是静默无反应。靠 `openerTabId` 才能知道「是谁打开了我」，所以退回去正好符合直觉。
+### 站内历史守卫（解决 X.com 退回 Google 的 bug）
+
+X/Twitter、YouTube、B站 这类 SPA 会用 `history.replaceState` 改写入口那条历史记录：
+从 Google 点进 X 的帖子，X 把「google.com/search…」这条记录原地替换成 x.com 的地址，
+但**这条记录本身还在栈里**。一路 `history.back()` 到底，退的正是它，于是人就回到了 Google 搜索页。
+
+守卫的做法：
+
+- 页面打开时，若 `document.referrer` 不是本站，则 `safeDepth = history.length - 2`（入口那一跳不允许退）
+- 钩住 `pushState` / `replaceState` / `popstate` / `hashchange`，站内每次导航 `safeDepth` 递增
+- 每次右滑消耗一格，`safeDepth` 归零后不再 `history.back()`，转去关闭标签 / 退回来源标签
+
+效果：X 站内能正常逐级后退，退到站内最底就停住，绝不跨站。
+
+第 2 步的 `openerTabId` 是另一层保险。在新标签页里打开的第一页，`history.length === 1`，
+`history.back()` 没有目标可回退，任何浏览器都是静默无反应。靠 `openerTabId` 才能知道「是谁打开了我」。
 
 ## 安装
 
@@ -60,7 +79,8 @@ background.js  (service worker)
 
 - `chrome://` 页面、Chrome 应用商店等受保护页面无法注入脚本
 - 部分站点（尤其自绘滚动容器的 SPA）手势仍可能被内容抢走，用 `HSCROLL_MS` 调
-- 已在 macOS 15.8.1 + Chrome 155.0.8059.85 实测通过：同标签多级后退、新标签打开的页面退回来源标签
+- 已在 macOS + Chrome 155 实测通过：同标签多级后退、新标签打开的页面退回来源标签
+- 站内历史守卫（v1.3 新增）尚未在 X.com 上实机验证
 
 ## 参考
 

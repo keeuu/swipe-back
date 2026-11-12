@@ -1,9 +1,11 @@
 {
   "manifest_version": 3,
   "name": "双指滑动返回",
-  "version": "1.2",
+  "version": "1.3",
   "description": "双指右滑返回上一页，左滑前进；新标签页打开的页面会退回来源标签。补上 macOS 版 Chrome 缺失的触控板手势。",
-  "permissions": ["tabs"],
+  "permissions": [
+    "tabs"
+  ],
   "background": {
     "service_worker": "background.js"
   },
@@ -15,8 +17,12 @@
   },
   "content_scripts": [
     {
-      "matches": ["<all_urls>"],
-      "js": ["swipe.js"],
+      "matches": [
+        "<all_urls>"
+      ],
+      "js": [
+        "swipe.js"
+      ],
       "all_frames": false,
       "run_at": "document_start"
     }
