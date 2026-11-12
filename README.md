@@ -35,19 +35,23 @@ background.js  (service worker)
   └─ 3. 都没有                              → 按配置跳新标签页 / 关闭 / 不做
 ```
 
-### 站内历史守卫（解决 X.com 退回 Google 的 bug）
+### 跨站回退守卫（解决 X.com 退回 Google 的 bug）
 
 X/Twitter、YouTube、B站 这类 SPA 会用 `history.replaceState` 改写入口那条历史记录：
 从 Google 点进 X 的帖子，X 把「google.com/search…」这条记录原地替换成 x.com 的地址，
 但**这条记录本身还在栈里**。一路 `history.back()` 到底，退的正是它，于是人就回到了 Google 搜索页。
 
-守卫的做法：
+**踩过的坑**：最初想用 `history.length` 数步数来封死跨站那一跳。行不通——
+Chrome 里 `pushState` **不会**让 `history.length` 增长，数出来的额度永远是 0，
+结果是第一次右滑就直接关标签，用户觉得"退不了"。
 
-- 页面打开时，若 `document.referrer` 不是本站，则 `safeDepth = history.length - 2`（入口那一跳不允许退）
-- 钩住 `pushState` / `replaceState` / `popstate` / `hashchange`，站内每次导航 `safeDepth` 递增
-- 每次右滑消耗一格，`safeDepth` 归零后不再 `history.back()`，转去关闭标签 / 退回来源标签
+**最终方案（v1.4）：先退、再检查、不对就撤回。**
 
-效果：X 站内能正常逐级后退，退到站内最底就停住，绝不跨站。
+1. `goBack()` 之后等 90ms，读当前标签的 URL
+2. 若新 URL 与手势发起时的页面**不同源**（跨站了），立刻 `goForward()` 撤回
+3. 撤回后走「关闭标签 / 退回来源标签」分支
+
+不依赖任何关于 `history.length` 的假设，退到哪就查到哪，跨站就原地弹回。
 
 第 2 步的 `openerTabId` 是另一层保险。在新标签页里打开的第一页，`history.length === 1`，
 `history.back()` 没有目标可回退，任何浏览器都是静默无反应。靠 `openerTabId` 才能知道「是谁打开了我」。
@@ -80,7 +84,7 @@ X/Twitter、YouTube、B站 这类 SPA 会用 `history.replaceState` 改写入口
 - `chrome://` 页面、Chrome 应用商店等受保护页面无法注入脚本
 - 部分站点（尤其自绘滚动容器的 SPA）手势仍可能被内容抢走，用 `HSCROLL_MS` 调
 - 已在 macOS + Chrome 155 实测通过：同标签多级后退、新标签打开的页面退回来源标签
-- 站内历史守卫（v1.3 新增）尚未在 X.com 上实机验证
+- 跨站回退守卫（v1.4）逻辑单测通过，待 X.com 实机确认
 
 ## 参考
 
